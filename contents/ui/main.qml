@@ -103,13 +103,32 @@ PlasmoidItem {
     property var installations: []
     property var alertedThresholds: ({})
 
-    // Cache. It lives in a hidden config entry, so saving it runs no process.
-    // It used to be written with `echo '<json>' > file`: every save was a new
-    // executable source named after the whole JSON (12-20 KB with the trend
-    // samples), and plasma5support keeps every source name it has seen as a
-    // property of each DataSource in plasmashell, which grew by megabytes per
-    // save. The old file is still read once, to carry its data over.
+    // Cache. Saving it must not run a process: it used to be written with
+    // `echo '<json>' > file`, so every save was a new executable source named
+    // after the whole JSON (12-20 KB with the trend samples), and
+    // plasma5support keeps every source name it has seen as a property of each
+    // DataSource in plasmashell, which grew by megabytes per save.
+    //
+    // It lives in LocalStorage (SQLite), shared by the instances that show the
+    // same account (the key follows the old per-instance file rule). Without
+    // the LocalStorage module it falls back to a hidden config entry, which
+    // 2.5.2 used. The old cache file is still read once, to carry it over.
+    Loader {
+        id: cacheStoreLoader
+        source: "CacheStore.qml"
+        onLoaded: item.dbName = "ClaudeUsageWidget"
+    }
+    readonly property var cacheStore: cacheStoreLoader.status === Loader.Ready ? cacheStoreLoader.item : null
+    readonly property string cacheKey: root.configuredClaudePath ? "cache-" + Plasmoid.id : "cache"
     property string lastSavedCache: ""
+
+    // The config copy is only needed without LocalStorage
+    function dropConfigCache() {
+        if ((Plasmoid.configuration.usageCache || "") !== "" || (Plasmoid.configuration.usageCacheTime || "") !== "") {
+            Plasmoid.configuration.usageCache = ""
+            Plasmoid.configuration.usageCacheTime = ""
+        }
+    }
 
     function applyCache(cache, timestamp) {
         var age = Date.now() - (timestamp || 0)
@@ -148,6 +167,20 @@ PlasmoidItem {
     }
 
     function loadCache() {
+        if (root.cacheStore) {
+            var json = root.cacheStore.read(root.cacheKey)
+            if (json.length > 10) {
+                try {
+                    var cache = JSON.parse(json)
+                    applyCache(cache, cache.timestamp)
+                    dropConfigCache()
+                    return
+                } catch (e) {
+                    console.log("Claude Usage: Cache parse error:", e)
+                }
+            }
+        }
+        // No LocalStorage row yet: the config entry of 2.5.2, else the old file
         var stored = Plasmoid.configuration.usageCache || ""
         if (stored.length > 10) {
             try {
@@ -201,19 +234,28 @@ PlasmoidItem {
             extraUsed: root.extraUsedCents,
             extraLimit: root.extraLimitCents
         }
-        var json = JSON.stringify(cache)
-        if (json !== root.lastSavedCache) {
-            Plasmoid.configuration.usageCache = json
-            root.lastSavedCache = json
-        }
-        // The age decides whether the cached values are shown after a restart.
-        Plasmoid.configuration.usageCacheTime = String(Date.now())
-
         // Model names for the settings page
         var known = (root.modelLimits || []).map(function(m) { return m.label || "" })
             .filter(function(n) { return n !== "" }).join(",")
         if (known !== "" && known !== Plasmoid.configuration.knownModels)
             Plasmoid.configuration.knownModels = known
+
+        if (root.cacheStore) {
+            // The age decides whether the cached values are shown after a restart.
+            cache.timestamp = Date.now()
+            if (root.cacheStore.write(root.cacheKey, JSON.stringify(cache))) {
+                dropConfigCache()
+                return
+            }
+        }
+        // Without LocalStorage: the config entry, written only when the data
+        // changes, its timestamp separately
+        var json = JSON.stringify(cache)
+        if (json !== root.lastSavedCache) {
+            Plasmoid.configuration.usageCache = json
+            root.lastSavedCache = json
+        }
+        Plasmoid.configuration.usageCacheTime = String(Date.now())
     }
 
     // Stale checker
@@ -334,9 +376,11 @@ PlasmoidItem {
             root.usageSamples = []
             root.tokenStats = []
             updatePlanName()
-            Plasmoid.configuration.usageCache = ""
-            Plasmoid.configuration.usageCacheTime = ""
+            // An instance with its own account keeps its own row; whatever it
+            // holds belongs to the previous account.
+            dropConfigCache()
             root.lastSavedCache = ""
+            if (root.cacheStore && root.configuredClaudePath) root.cacheStore.remove(root.cacheKey)
             loadCache()
 
             refresh()

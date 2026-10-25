@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The usage cache moved from the widget's settings to LocalStorage (SQLite): Plasma's layout file (`plasma-org.kde.plasma.desktop-appletsrc`) is no longer rewritten every 5 minutes, and instances showing the same account share one cache and trend history again. Without the LocalStorage module (a separate package on Debian and Ubuntu) the widget keeps using its settings ([#28](https://github.com/izll/plasma-claude-usage/pull/28), thanks @gdevenyi, who also tracked down the 2.5.2 memory leak independently)
+
 ### Fixed
 
 - **Bogus "Breakdown" model row**: the usage API now returns `seven_day_breakdown`, a per-surface summary rather than a limit, and the popup showed it as "Breakdown 0%" in place of the real model limits (e.g. Fable from the `limits` array). Only `seven_day_*` entries with a numeric `utilization` count as model limits now
