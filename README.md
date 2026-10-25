@@ -169,6 +169,7 @@ claude-usage-widget/
 │   │   ├── CompactView.qml    # Panel representation (text/bar/ring)
 │   │   ├── FullView.qml       # Card popup with drag & drop
 │   │   ├── UsageRing.qml      # Anti-aliased progress ring component
+│   │   ├── CacheStore.qml     # Usage cache in LocalStorage (SQLite)
 │   │   ├── ModelRow.qml       # Model breakdown row component
 │   │   ├── TrendChart.qml     # 7-day trend chart component
 │   │   ├── configGeneral.qml  # Settings: General tab
