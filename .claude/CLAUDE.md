@@ -9,12 +9,19 @@ This is a KDE Plasma 6 widget that displays Claude Code usage statistics (sessio
 The widget is **pure QML** with no external dependencies:
 
 1. **Credentials reading**: Uses `Plasma5Support.DataSource` with "executable" engine to `cat` the credentials file. Never hardcode that path — build it with the helpers in `main.qml` (`credentialsFileExpr()`, `claudeDirExpr()`, `claudeDirEnvPrefix()`, `readCredentialsCmd()`, `readAccountCmd()`), which resolve the `credentialsPath` setting and fall back to `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`. User-supplied paths must go through `shQuotePath()`.
-2. **API calls**: Uses QML's built-in `XMLHttpRequest` to call Anthropic's OAuth usage API
-3. **UI**: Standard Plasma/Kirigami components
+2. **API calls**: `contents/scripts/fetch_usage.sh` calls Anthropic's OAuth usage API with curl in a fresh subprocess (plasmashell's in-process network stack goes stale after suspend/resume). `XMLHttpRequest` is only used for a custom base URL.
+3. **Cache**: `CacheStore.qml` keeps the last usage data in LocalStorage (SQLite), loaded through a Loader because the module can be missing (Debian/Ubuntu); without it the hidden `usageCache` config entry is used. Never write it with a shell command — see `AGENTS.md` on constant executable commands.
+4. **UI**: Standard Plasma/Kirigami components
 
 ## Key Files
 
-- `contents/ui/main.qml` - All widget logic and UI
+- `contents/ui/main.qml` - Widget logic: credentials, API, cache, timers, notifications
+- `contents/ui/CompactView.qml` - Panel (ring / text / bar)
+- `contents/ui/FullView.qml` - Card popup (the classic popup is in `main.qml`)
+- `contents/ui/config*.qml` - Settings tabs (General, Panel, Popup, Account); `contents/config/config.qml` lists them
+- `contents/ui/CacheStore.qml` - Usage cache in LocalStorage
+- `contents/ui/Translations.qml` - All UI strings, 15 languages
+- `contents/scripts/fetch_usage.sh` - Usage API request (curl)
 - `contents/icons/claude.svg` - Claude logo (orange #D97757)
 - `metadata.json` - Plasma widget metadata
 - `install.sh` - Installation script
@@ -55,7 +62,7 @@ The `anthropic-beta: oauth-2025-04-20` header is **required** - without it the A
 
 Claude Code stores OAuth credentials in `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json`. The `credentialsPath` setting overrides this: a value ending in `.json` is the file, anything else is the config folder. The resolved folder also drives the account file, the `projects/` token-stats scan, and the `CLAUDE_CONFIG_DIR` handed to the `claude` process the widget launches.
 
-Note the asymmetry in Claude Code's own layout: by default `.claude.json` (account info) is a **sibling** of the config folder (`~/.claude.json`), but with `CLAUDE_CONFIG_DIR` set it lives **inside** it — `readAccountCmd()` tries the folder first and falls back to `$HOME`.
+Note the asymmetry in Claude Code's own layout: by default `.claude.json` (account info) is a **sibling** of the config folder (`~/.claude.json`), but with `CLAUDE_CONFIG_DIR` set it lives **inside** it — `readAccountCmd()` tries the folder first. Without a Credentials path it then falls back to `~/.claude.json`; with a configured folder only when that folder *is* `~/.claude` (otherwise a second account would show the first one's e-mail).
 
 The file looks like:
 
@@ -88,7 +95,7 @@ The file looks like:
 - **StandardPaths not working**: Use `$HOME` environment variable instead
 - **API returns 401**: Make sure `anthropic-beta` header is included
 - **Widget not updating**: Check if credentials file exists and is readable
-- **Token stats empty**: `refreshTokenStats()` passes `-newer /tmp/.claude-token-stats-marker` to `find`, but nothing ever creates that marker, so `find` aborts and prints nothing
+- **plasmashell memory keeps growing**: look for an executable command whose text changes between runs (see `AGENTS.md`)
 
 ## Publishing
 
